@@ -79,24 +79,14 @@ void LightControl::getTertiaryColorHSV(uint16_t &h, uint8_t &s, uint8_t &v) cons
 }
 
 void LightControl::ledAdvance(int8_t direction) {
-  static uint8_t tempOrder[LED_COUNT]; // Temporary buffer (only created once)
-
-  if (direction > 0) {
-    // Rotate forward: shift everything left, wrap first to end
-    for (int i = 0; i < LED_COUNT - 1; ++i) {
-      tempOrder[i] = ledOrder[i + 1];
-    }
-    tempOrder[LED_COUNT - 1] = ledOrder[0];
+  // Determine the new position of the lead LED based on direction
+  if (direction < 0) {
+    // Move forward (increase the index)
+    leadLed = (leadLed + 1) % LED_COUNT;  // Wrap around after reaching the last LED
   } else {
-    // Rotate backward: shift everything right, wrap last to front
-    for (int i = LED_COUNT - 1; i > 0; --i) {
-      tempOrder[i] = ledOrder[i - 1];
-    }
-    tempOrder[0] = ledOrder[LED_COUNT - 1];
+    // Move backward (decrease the index)
+    leadLed = (leadLed - 1 + LED_COUNT) % LED_COUNT;  // Wrap around after reaching the first LED
   }
-
-  // Copy temp buffer back to main buffer
-  memcpy(ledOrder, tempOrder, LED_COUNT * sizeof(uint8_t));
 }
 
 void LightControl::setFrontPixel(uint8_t index) {
@@ -206,18 +196,18 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
     if (tertiaryVal != 0) activeColors[colorCount++] = {tertiaryHue, tertiarySat, tertiaryVal};
     
     // Advance the lead pixel position, negative for a better match.
-    ledAdvance(-direction);
-    DEBUG_PRINT("ledOrder:");
-    for (int i = 0; i < LED_COUNT; i++) {
-      DEBUG_PRINT(ledOrder[i]);
-      DEBUG_PRINT(" ");
-    }
-    DEBUG_PRINTLN("");
+    ledAdvance(direction);
 
     for (int i = 0; i < LED_COUNT; i++) {
-      //DEBUG_PRINTLN(i);
       // Calculate position of the trailing pixel relative to the lead pixel
-      int trailPos = (LED_COUNT + ledOrder[0] - i) % LED_COUNT; // how far behind the lead pixel this one is
+      uint8_t trailPos;
+      if (direction < 0) {
+        // Moving forward (direction = 1)
+        trailPos = (i - leadLed + LED_COUNT) % LED_COUNT;
+      } else {
+        // Moving backward (direction = -1)
+        trailPos = (leadLed - i + LED_COUNT) % LED_COUNT;
+      }
       float position = (float)trailPos / LED_COUNT;  // [0.0 - 1.0] along strip
       float fadeFactor = 1.0 - position;
 
@@ -271,11 +261,12 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
       // Dynamic color calculation based on HSV
       uint32_t finalColor = strip.ColorHSV(hue * 182, sat, finalVal);
 
-      DEBUG_PRINTF("i: %i, Lead pixel: %i, trailPos: %d, position: %.2f\n", i, ledOrder[0], trailPos, position);
-      DEBUG_PRINTF("Pixel: %i, Hue: %i, Sat: %i, Val: %i\n", ledOrder[i], hue, sat, finalVal);
+      // Debugging output
+      DEBUG_PRINTF("i: %i, Lead pixel: %i, trailPos: %d, position: %.2f\n", i, leadLed, trailPos, position);
+      DEBUG_PRINTF("Hue: %i, Sat: %i, Val: %i\n", hue, sat, finalVal);
       DEBUG_PRINTF("val: %i, BrightnessFactor: %.2f, FadeFactor: %.2f, finalBrightness: %.2f, finalVal: %i\n\n", val, brightnessFactor, fadeFactor, finalBrightness, finalVal);
 
-      strip.setPixelColor(ledOrder[i], finalColor);  // Set the pixel color
+      strip.setPixelColor(i, finalColor);  // Set the pixel color
     }
     strip.show();
     lastUpdate = now;
