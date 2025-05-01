@@ -3,7 +3,7 @@
 
 #include <Adafruit_NeoPixel.h>
 
-#define LED_PIN     32
+#define LED_PIN     13
 #define LED_COUNT   20
 #define BRIGHTNESS  50
 
