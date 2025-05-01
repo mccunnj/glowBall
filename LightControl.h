@@ -18,12 +18,6 @@ public:
   void solidSparkle(uint16_t speed, uint8_t lightBrightC);
   void fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direction);
 
-
-  /*TODO: 
-  Flickering wipe
-  2-tone
-  */
-
   void updateColorsFromHex(const String& hexPrimary, const String& hexSecondary, const String& hexTertiary);
 
   uint32_t getPrimaryColorRGB() const;
@@ -51,7 +45,6 @@ private:
   //Animation timer
   unsigned long lastUpdate;
   //uint updateTime;
-  uint8_t ledOrder[LED_COUNT];
   void ledAdvance(int8_t direction);
   
   //SolidSparkle

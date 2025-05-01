@@ -47,21 +47,24 @@ void LightControl::hexToRGB(const String &hex, uint8_t &r, uint8_t &g, uint8_t &
 }
 
 void LightControl::rgbToHSV(uint8_t r, uint8_t g, uint8_t b, uint16_t &h, uint8_t &s, uint8_t &v) {
-  float fr = r / 255.0, fg = g / 255.0, fb = b / 255.0;
+  float fr = r / 255.0f, fg = g / 255.0f, fb = b / 255.0f;
   float max = std::max({fr, fg, fb});
   float min = std::min({fr, fg, fb});
   float delta = max - min;
 
-  h = 0;
+  float hue = 0.0f;
   if (delta > 0.0001f) {
-    if (max == fr) h = 60 * fmod(((fg - fb) / delta), 6);
-    else if (max == fg) h = 60 * (((fb - fr) / delta) + 2);
-    else h = 60 * (((fr - fg) / delta) + 4);
-    if (h < 0) h += 360;
+    if (max == fr) hue = 60.0f * fmod((fg - fb) / delta, 6.0f);
+    else if (max == fg) hue = 60.0f * (((fb - fr) / delta) + 2.0f);
+    else hue = 60.0f * (((fr - fg) / delta) + 4.0f);
+    if (hue < 0) hue += 360.0f;
   }
 
-  s = (max == 0) ? 0 : (delta / max) * 255;
-  v = max * 255;
+  h = static_cast<uint16_t>(round(hue));
+  if (h >= 360) h -= 360;
+
+  s = (max == 0) ? 0 : static_cast<uint8_t>(round((delta / max) * 255.0f));
+  v = static_cast<uint8_t>(round(max * 255.0f));
 }
 
 uint32_t LightControl::getPrimaryColorRGB() const { return primaryRGB; }
@@ -86,15 +89,6 @@ void LightControl::ledAdvance(int8_t direction) {
   } else {
     // Move backward (decrease the index)
     leadLed = (leadLed - 1 + LED_COUNT) % LED_COUNT;  // Wrap around after reaching the first LED
-  }
-}
-
-void LightControl::setFrontPixel(uint8_t index) {
-  if (index < LED_COUNT) {
-    frontPixelIndex = index;
-    for (int i = 0; i < LED_COUNT; i++) {
-      ledOrder[i] = (frontPixelIndex + i) % LED_COUNT;
-    }
   }
 }
 
@@ -165,18 +159,31 @@ void LightControl::solidSparkle(uint16_t speed, uint8_t lightBrightC) {
 }
 // --- Helper Functions ---
 float lerpHue(float a, float b, float t) {
-  float delta = b - a;
-  if (delta > 180) delta -= 360;
-  if (delta < -180) delta += 360;
-  float result = a + delta * t;
-  if (result < 0) result += 360;
-  if (result >= 360) result -= 360;
-  return result;
+    float delta = b - a;
+
+    // Ensure the shortest path between hues (account for wrapping around 360 degrees)
+    if (delta > 180) {
+        delta -= 360;  // If b is larger but across the 360 boundary
+    } else if (delta < -180) {
+        delta += 360;  // If b is smaller but across the 0 boundary
+    }
+
+    // Perform the interpolation
+    float result = a + delta * t;
+
+    // Ensure the result is wrapped around 0-360
+    if (result < 0) {
+        result += 360;
+    } else if (result >= 360) {
+        result -= 360;
+    }
+
+    return result;
 }
 
 void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direction){
   // Map speed (motor speed) to a speed factor (higher speed = faster advances)
-  unsigned long speedFactor = map(speed, 1, 950, 10000, 507); // Speed factor (chaseSpeed) based on motor speed
+  unsigned long speedFactor = map(speed, 1, 950, 5000, 600); // Speed factor (chaseSpeed) based on motor speed
   // Activate LEDs
   strip.setBrightness(255);
   // Chase Speed
@@ -194,14 +201,12 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
     if (primaryVal != 0) activeColors[colorCount++] = {primaryHue, primarySat, primaryVal};
     if (secondaryVal != 0) activeColors[colorCount++] = {secondaryHue, secondarySat, secondaryVal};
     if (tertiaryVal != 0) activeColors[colorCount++] = {tertiaryHue, tertiarySat, tertiaryVal};
-    
-    // Advance the lead pixel position, negative for a better match.
-    ledAdvance(direction);
+
 
     for (int i = 0; i < LED_COUNT; i++) {
       // Calculate position of the trailing pixel relative to the lead pixel
       uint8_t trailPos;
-      if (direction < 0) {
+      if (direction > 0) {
         // Moving forward (direction = 1)
         trailPos = (i - leadLed + LED_COUNT) % LED_COUNT;
       } else {
@@ -235,27 +240,35 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
 
         default: { // 3 colors
           float posThird = fadeFactor * 3.0f;
+          // Last Third
           if (posThird < 1.0f) {
-            hue = lerpHue(activeColors[0].h, activeColors[1].h, posThird);
-            sat = lerp(activeColors[0].s, activeColors[1].s, posThird);
-            val = lerp(activeColors[0].v, activeColors[1].v, posThird);
-          } else if (posThird < 2.0f) {
-            float t = posThird - 1.0f;
+            hue = lerpHue(activeColors[0].h, activeColors[2].h, posThird);
+            sat = lerp(activeColors[0].s, activeColors[2].s, posThird);
+            val = lerp(activeColors[0].v, activeColors[2].v, posThird);
+          } 
+          // Middle Third
+          else if (posThird < 2.0f) {
+            float t = 1 - (posThird - 1.0f);
             hue = lerpHue(activeColors[1].h, activeColors[2].h, t);
             sat = lerp(activeColors[1].s, activeColors[2].s, t);
             val = lerp(activeColors[1].v, activeColors[2].v, t);
-          } else {
-            hue = activeColors[2].h;
-            sat = activeColors[2].s;
-            val = activeColors[2].v;
+          } 
+          // First Third
+          else if (posThird <= 3.0f){
+            float t = 1 - (posThird - 2.0f);
+            hue = lerpHue(activeColors[0].h, activeColors[1].h, t);
+            sat = lerp(activeColors[0].s, activeColors[1].s, t);
+            val = lerp(activeColors[0].v, activeColors[1].v, t);
           }
           break;
         }
+
       }
 
       // CORRECT floating-point math for brightness
       float brightnessFactor = (float)lightBrightC / 255.0f;
-      float finalBrightness = val * brightnessFactor * position; 
+
+      float finalBrightness = val * brightnessFactor * fadeFactor; 
       uint8_t finalVal = constrain((int)(finalBrightness + 0.5f), 0, 255);
       
       // Dynamic color calculation based on HSV
@@ -270,5 +283,7 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
     }
     strip.show();
     lastUpdate = now;
+    // Advance the lead pixel position
+    ledAdvance(direction);
   }
 }
