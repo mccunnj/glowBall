@@ -2,30 +2,66 @@
 #define LIGHTCONTROL_H
 
 #include <Adafruit_NeoPixel.h>
+#include <Arduino.h>
 
 #define LED_PIN     13
 #define LED_COUNT   20
-#define BRIGHTNESS  50
+#define BRIGHTNESS  255
 
 class LightControl {
 public:
   LightControl();  // Constructor
-
+  void setFrontPixel(uint8_t index);
   void begin();  // Initialize NeoPixel strip
-  void colorWipe(uint32_t color, int wait);
-  void whiteOverRainbow(int whiteSpeed, int whiteLength);
-  void pulseWhite(uint8_t wait);
-  void rainbowFade2White(int wait, int rainbowLoops, int whiteLoops);
+  void off();
+
+  void solidSparkle(uint16_t speed, uint8_t lightBrightC);
+  void fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direction);
+
+
   /*TODO: 
   Flickering wipe
-  Solid
-  Solid Sparkle
   2-tone
   */
+
+  void updateColorsFromHex(const String& hexPrimary, const String& hexSecondary, const String& hexTertiary);
+
+  uint32_t getPrimaryColorRGB() const;
+  uint32_t getSecondaryColorRGB() const;
+  uint32_t getTertiaryColorRGB() const;
+
+  void getPrimaryColorHSV(uint16_t &h, uint8_t &s, uint8_t &v) const;
+  void getSecondaryColorHSV(uint16_t &h, uint8_t &s, uint8_t &v) const;
+  void getTertiaryColorHSV(uint16_t &h, uint8_t &s, uint8_t &v) const;
+
   Adafruit_NeoPixel strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 private:
+  // Cached 32-bit packed RGB values
+  uint32_t primaryRGB, secondaryRGB, tertiaryRGB;
+
+  // HSV values
+  uint16_t primaryHue, secondaryHue, tertiaryHue;
+  uint8_t primarySat, secondarySat, tertiarySat;
+  uint8_t primaryVal, secondaryVal, tertiaryVal;
+
+  void hexToRGB(const String &hex, uint8_t &r, uint8_t &g, uint8_t &b);
+  void rgbToHSV(uint8_t r, uint8_t g, uint8_t b, uint16_t &h, uint8_t &s, uint8_t &v);
   
+  //Animation timer
+  unsigned long lastUpdate;
+  //uint updateTime;
+  uint8_t ledOrder[LED_COUNT];
+  void ledAdvance(int8_t direction);
+  
+  //SolidSparkle
+  float targetOffsets[50];  // Brightness offsets for each LED
+  float currentBrightness[50];  // Current brightness values for each LED
+
+  //FadeChaser
+  uint8_t frontPixelIndex = 0;
+  uint8_t leadLed;
+
 };
 
 #endif
