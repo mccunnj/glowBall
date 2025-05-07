@@ -159,27 +159,17 @@ void LightControl::solidSparkle(uint16_t speed, uint8_t lightBrightC) {
 }
 // --- Helper Functions ---
 float lerpHue(float a, float b, float t) {
-    float delta = b - a;
-
-    // Ensure the shortest path between hues (account for wrapping around 360 degrees)
-    if (delta > 180) {
-        delta -= 360;  // If b is larger but across the 360 boundary
-    } else if (delta < -180) {
-        delta += 360;  // If b is smaller but across the 0 boundary
-    }
-
-    // Perform the interpolation
-    float result = a + delta * t;
-
-    // Ensure the result is wrapped around 0-360
-    if (result < 0) {
-        result += 360;
-    } else if (result >= 360) {
-        result -= 360;
-    }
-
+    float delta = fmodf(b - a + 540.0f, 360.0f) - 180.0f;
+    float result = fmodf(a + delta * t + 360.0f, 360.0f);
     return result;
 }
+
+inline uint16_t degreesToHue16(float hueDegrees) {
+  // Normalize to 0–360, then shift so red is centered at 32768
+  hueDegrees = fmodf(hueDegrees + 360.0f, 360.0f);  // wrap into 0–360
+  return (uint16_t)((hueDegrees / 360.0f) * 65535.0f);  // Note: not 65536
+}
+
 
 void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direction){
   // Map speed (motor speed) to a speed factor (higher speed = faster advances)
@@ -267,12 +257,11 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
 
       // CORRECT floating-point math for brightness
       float brightnessFactor = (float)lightBrightC / 255.0f;
-
       float finalBrightness = val * brightnessFactor * fadeFactor; 
       uint8_t finalVal = constrain((int)(finalBrightness + 0.5f), 0, 255);
       
       // Dynamic color calculation based on HSV
-      uint32_t finalColor = strip.ColorHSV(hue * 182, sat, finalVal);
+      uint32_t finalColor = strip.ColorHSV(degreesToHue16(hue), (sat * 0.95), finalVal);
 
       // Debugging output
       DEBUG_PRINTF("i: %i, Lead pixel: %i, trailPos: %d, position: %.2f\n", i, leadLed, trailPos, position);
