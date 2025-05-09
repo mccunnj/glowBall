@@ -34,6 +34,9 @@ void LightControl::updateColorsFromHex(const String& hexPrimary, const String& h
   hexToRGB(hexTertiary, r, g, b);
   tertiaryRGB = strip.Color(r, g, b);
   rgbToHSV(r, g, b, tertiaryHue, tertiarySat, tertiaryVal);
+
+  //Update Color Wheel
+
 }
 
 void LightControl::hexToRGB(const String &hex, uint8_t &r, uint8_t &g, uint8_t &b) {
@@ -83,7 +86,7 @@ void LightControl::getTertiaryColorHSV(uint16_t &h, uint8_t &s, uint8_t &v) cons
 
 void LightControl::ledAdvance(int8_t direction) {
   // Determine the new position of the lead LED based on direction
-  if (direction < 0) {
+  if (direction > 0) {
     // Move forward (increase the index)
     leadLed = (leadLed + 1) % LED_COUNT;  // Wrap around after reaching the last LED
   } else {
@@ -157,7 +160,7 @@ void LightControl::solidSparkle(uint16_t speed, uint8_t lightBrightC) {
     strip.show(); // Update the LED strip
   }
 }
-// --- Helper Functions ---
+// --- Helper Functions for fadeChaser ---
 float lerpHue(float a, float b, float t) {
     float delta = fmodf(b - a + 540.0f, 360.0f) - 180.0f;
     float result = fmodf(a + delta * t + 360.0f, 360.0f);
@@ -170,109 +173,131 @@ inline uint16_t degreesToHue16(float hueDegrees) {
   return (uint16_t)((hueDegrees / 360.0f) * 65535.0f);  // Note: not 65536
 }
 
+void LightControl::populateRing(int8_t direction) {
+  // 1. Collect active (non-black) colors
+  int8_t colorCount = 0;
+    
+  if (primaryVal != 0) activeColors[colorCount++] = {primaryHue, primarySat, primaryVal};
+  if (secondaryVal != 0) activeColors[colorCount++] = {secondaryHue, secondarySat, secondaryVal};
+  if (tertiaryVal != 0) activeColors[colorCount++] = {tertiaryHue, tertiarySat, tertiaryVal};
+
+  for (int i = 0; i < LED_COUNT; i++) {
+    // Calculate directon of hue progress around the pixel ring
+    uint8_t trailPos;
+    if (direction < 0) {
+      // Moving forward (direction = 1)
+      trailPos = (LED_COUNT - i) % LED_COUNT;
+    } else {
+      // Moving backward (direction = -1)
+      trailPos = (LED_COUNT + i) % LED_COUNT;
+    }
+    float position = (float)trailPos / LED_COUNT;  // [0.0 - 1.0] along strip
+    float fadeFactor = 1.0 - position;
+
+    switch (colorCount) {
+      case 0:
+        ringColors[i].h = 0; ringColors[i].s = 0; ringColors[i].v = 0;
+        break;
+
+      case 1:
+        ringColors[i].h = activeColors[0].h;
+        ringColors[i].s = activeColors[0].s;
+        ringColors[i].v = activeColors[0].v;
+        break;
+
+      case 2: {
+        ringColors[i].h = lerpHue(activeColors[0].h, activeColors[1].h, fadeFactor);
+        ringColors[i].s = lerp(activeColors[0].s, activeColors[1].s, fadeFactor);
+        ringColors[i].v = lerp(activeColors[0].v, activeColors[1].v, fadeFactor);
+        break;
+      }
+
+      default: { // 3 colors
+        float posThird = fadeFactor * 3.0f;
+        // Last Third
+        if (posThird < 1.0f) {
+          ringColors[i].h = lerpHue(activeColors[0].h, activeColors[2].h, posThird);
+          ringColors[i].s = lerp(activeColors[0].s, activeColors[2].s, posThird);
+          ringColors[i].v = lerp(activeColors[0].v, activeColors[2].v, posThird);
+        } 
+        // Middle Third
+        else if (posThird < 2.0f) {
+          float t = 1 - (posThird - 1.0f);
+          ringColors[i].h = lerpHue(activeColors[1].h, activeColors[2].h, t);
+          ringColors[i].s = lerp(activeColors[1].s, activeColors[2].s, t);
+          ringColors[i].v = lerp(activeColors[1].v, activeColors[2].v, t);
+        } 
+        // First Third
+        else if (posThird <= 3.0f){
+          float t = 1 - (posThird - 2.0f);
+          ringColors[i].h = lerpHue(activeColors[0].h, activeColors[1].h, t);
+          ringColors[i].s = lerp(activeColors[0].s, activeColors[1].s, t);
+          ringColors[i].v = lerp(activeColors[0].v, activeColors[1].v, t);
+        }
+        break;
+      }
+
+    }
+    // Debugging output
+    DEBUG_PRINTF("i: %i, trailPos: %d, position: %.2f\n", i, trailPos, position);
+    DEBUG_PRINTF("Hue: %i, Sat: %i, Val: %i\n", ringColors[i].h, ringColors[i].s, ringColors[i].v);
+
+  }
+}
 
 void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direction){
   // Map speed (motor speed) to a speed factor (higher speed = faster advances)
-  unsigned long speedFactor = map(speed, 1, 950, 5000, 600); // Speed factor (chaseSpeed) based on motor speed
+  unsigned long speedFactor = map(speed, 1, 950, 2500/transitionSteps, 900/transitionSteps); // Speed factor (chaseSpeed) based on motor speed
   // Activate LEDs
   strip.setBrightness(255);
   // Chase Speed
   unsigned long now = millis();
   if(now - lastUpdate > speedFactor){
-    // 1. Collect active (non-black) colors
-    struct HSVColor {
-      uint16_t h;
-      uint8_t s, v;
-    };
     
-    HSVColor activeColors[3];
-    int8_t colorCount = 0;
-    
-    if (primaryVal != 0) activeColors[colorCount++] = {primaryHue, primarySat, primaryVal};
-    if (secondaryVal != 0) activeColors[colorCount++] = {secondaryHue, secondarySat, secondaryVal};
-    if (tertiaryVal != 0) activeColors[colorCount++] = {tertiaryHue, tertiarySat, tertiaryVal};
-
-
     for (int i = 0; i < LED_COUNT; i++) {
-      // Calculate position of the trailing pixel relative to the lead pixel
-      uint8_t trailPos;
-      if (direction > 0) {
-        // Moving forward (direction = 1)
-        trailPos = (i - leadLed + LED_COUNT) % LED_COUNT;
-      } else {
-        // Moving backward (direction = -1)
-        trailPos = (leadLed - i + LED_COUNT) % LED_COUNT;
-      }
-      float position = (float)trailPos / LED_COUNT;  // [0.0 - 1.0] along strip
-      float fadeFactor = 1.0 - position;
 
-      uint16_t hue;
-      uint8_t sat;
-      uint8_t val;
-
-      switch (colorCount) {
-        case 0:
-          hue = 0; sat = 0; val = 0;
-          break;
-
-        case 1:
-          hue = activeColors[0].h;
-          sat = activeColors[0].s;
-          val = activeColors[0].v;
-          break;
-
-        case 2: {
-          hue = lerpHue(activeColors[0].h, activeColors[1].h, fadeFactor);
-          sat = lerp(activeColors[0].s, activeColors[1].s, fadeFactor);
-          val = lerp(activeColors[0].v, activeColors[1].v, fadeFactor);
-          break;
-        }
-
-        default: { // 3 colors
-          float posThird = fadeFactor * 3.0f;
-          // Last Third
-          if (posThird < 1.0f) {
-            hue = lerpHue(activeColors[0].h, activeColors[2].h, posThird);
-            sat = lerp(activeColors[0].s, activeColors[2].s, posThird);
-            val = lerp(activeColors[0].v, activeColors[2].v, posThird);
-          } 
-          // Middle Third
-          else if (posThird < 2.0f) {
-            float t = 1 - (posThird - 1.0f);
-            hue = lerpHue(activeColors[1].h, activeColors[2].h, t);
-            sat = lerp(activeColors[1].s, activeColors[2].s, t);
-            val = lerp(activeColors[1].v, activeColors[2].v, t);
-          } 
-          // First Third
-          else if (posThird <= 3.0f){
-            float t = 1 - (posThird - 2.0f);
-            hue = lerpHue(activeColors[0].h, activeColors[1].h, t);
-            sat = lerp(activeColors[0].s, activeColors[1].s, t);
-            val = lerp(activeColors[0].v, activeColors[1].v, t);
-          }
-          break;
-        }
-
+      int index1 = (leadLed + LED_COUNT + i ) % LED_COUNT;
+      int index2 = (leadLed + LED_COUNT + i + 1) % LED_COUNT;
+      if (direction < 0) {
+        std::swap(index1, index2);
       }
 
-      // CORRECT floating-point math for brightness
-      float brightnessFactor = (float)lightBrightC / 255.0f;
-      float finalBrightness = val * brightnessFactor * fadeFactor; 
-      uint8_t finalVal = constrain((int)(finalBrightness + 0.5f), 0, 255);
+      HSVColor& c1 = ringColors[index1];
+      HSVColor& c2 = ringColors[index2];
+
+      float h = lerpHue(c1.h, c2.h, transitionProgress);
+      float s = lerp(c1.s, c2.s, transitionProgress);
+      float v = lerp(c1.v, c2.v, transitionProgress);
+      
+      // // CORRECT floating-point math for brightness
+      // float brightnessFactor = (float)lightBrightC / 255.0f;
+      // //uint8_t finalVal = constrain((int)(finalBrightness + 0.5f), 0, 255);
       
       // Dynamic color calculation based on HSV
-      uint32_t finalColor = strip.ColorHSV(degreesToHue16(hue), (sat * 0.95), finalVal);
+      uint32_t finalColor = strip.ColorHSV(degreesToHue16(h), s, lightBrightC);
+      // uint32_t finalColor = strip.ColorHSV(degreesToHue16(ringColors[i].h), ringColors[i].s, lightBrightC);
 
-      // Debugging output
-      DEBUG_PRINTF("i: %i, Lead pixel: %i, trailPos: %d, position: %.2f\n", i, leadLed, trailPos, position);
-      DEBUG_PRINTF("Hue: %i, Sat: %i, Val: %i\n", hue, sat, finalVal);
-      DEBUG_PRINTF("val: %i, BrightnessFactor: %.2f, FadeFactor: %.2f, finalBrightness: %.2f, finalVal: %i\n\n", val, brightnessFactor, fadeFactor, finalBrightness, finalVal);
-
+      if(i == 0){
+        DEBUG_PRINTF("Index %d, to %d\n", index1, index2);
+        DEBUG_PRINTF("Indexed Hue: %i to %i\n", c1.h, c2.h);
+        DEBUG_PRINTF("Transition Progress: %.2f, Hue: %.2f, Sat: %.2f, Val: %.2f \n", transitionProgress, h, s, v);
+        
+        //finalColor = strip.ColorHSV(degreesToHue16(h), s, lightBrightC);
+      }
       strip.setPixelColor(i, finalColor);  // Set the pixel color
+
     }
     strip.show();
     lastUpdate = now;
-    // Advance the lead pixel position
-    ledAdvance(direction);
+    // Progress the transition
+    transitionProgress += transitionStep;
+    if (transitionProgress >= 1.0f) {
+      transitionProgress = 0.0f;
+      // Advance the lead pixel position
+      leadLed = (leadLed + direction + LED_COUNT) % LED_COUNT;
+
+      // Debugging output
+      DEBUG_PRINTF("Lead pixel: %i\n", leadLed);
+    }
   }
 }

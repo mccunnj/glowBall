@@ -309,6 +309,7 @@ void handleUpdate() {
     }
 
     lights.updateColorsFromHex(primaryColor, secondaryColor, tertiaryColor);
+    lights.populateRing(stepperDirection);
     xSemaphoreGive(settingsMutex);
     
   }
@@ -424,6 +425,7 @@ void setup() {
 
   // Simulated hex inputs from Web UI
   lights.updateColorsFromHex(primaryColor, secondaryColor, tertiaryColor);
+  lights.populateRing(stepperDirection);
   printColorData();
 
   // Create light control task on Core -xx
@@ -483,26 +485,8 @@ void lightControlTask(void *pvParameters) {
       case 2:
         lights.fadeChaser(speedCopy, brightnessCopy, directionCopy);
         break;
-      case 3:
-        //lights.rainbowFade2WhiteStep(speedCopy, brightnessCopy);
-        break;
-      default:
-        break;
     }
 
-    // //DEBUG_PRINTLN("RGB Color Wipe");
-    // lights.colorWipe(lights.strip.Color(255, 0, 0), 25); // Red
-    // lights.colorWipe(lights.strip.Color(0, 255, 0), 50); // Green
-    // lights.colorWipe(lights.strip.Color(0, 0, 255), 100); // Blue
-
-    // //DEBUG_PRINTLN("White over rainbow");
-    // lights.whiteOverRainbow(75, 5);
-
-    // //DEBUG_PRINTLN("Pulse White");
-    // lights.pulseWhite(5);
-
-    // //DEBUG_PRINTLN("Rainbow Fade to White");
-    // lights.rainbowFade2White(3, 3, 1);
 
     vTaskDelay(5 / portTICK_PERIOD_MS); // Avoid WDT resets
   }
