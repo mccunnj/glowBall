@@ -187,8 +187,6 @@ const char responsePortal[] PROGMEM = R"rawliteral(
       <option value="0">Off</option>
       <option value="1">Solid Sparkle</option>
       <option value="2">Fade Chaser</option>
-      <option value="3">Pulse</option>
-      <option value="4">Fade to White</option>
     </select><br>
 
     <label for="brightness" class="centered-label">Brightness: <span id="brightnessValue">0</span></label>
