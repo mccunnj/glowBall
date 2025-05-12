@@ -3,6 +3,7 @@
 
 LightControl::LightControl() {
   lastUpdate = 0;
+  lastSparkleUpdate = 0;
 }
 
 void LightControl::begin() {
@@ -10,6 +11,7 @@ void LightControl::begin() {
   strip.show();
   strip.setBrightness(BRIGHTNESS);
   lastUpdate = millis();
+  lastSparkleUpdate = millis();
 }
 
 void LightControl::off(){
@@ -118,8 +120,8 @@ void LightControl::solidSparkle(uint16_t speed, uint8_t lightBrightC) {
   }
 
   // Update the animation based on the speed
-  if (now - lastUpdate > speedFactor) { // Adjust based on motor speed
-    lastUpdate = now;
+  if (now - lastSparkleUpdate > speedFactor) { // Adjust based on motor speed
+    lastSparkleUpdate = now;
 
     // Loop over each LED to apply the sparkle effect
     for (int i = 0; i < LED_COUNT; i++) {
@@ -239,23 +241,38 @@ void LightControl::populateRing(int8_t direction) {
 
     }
     // Debugging output
-    DEBUG_PRINTF("i: %i, trailPos: %d, position: %.2f\n", i, trailPos, position);
-    DEBUG_PRINTF("Hue: %i, Sat: %i, Val: %i\n", ringColors[i].h, ringColors[i].s, ringColors[i].v);
+    // DEBUG_PRINTF("i: %i, trailPos: %d, position: %.2f\n", i, trailPos, position);
+    // DEBUG_PRINTF("Hue: %i, Sat: %i, Val: %i\n", ringColors[i].h, ringColors[i].s, ringColors[i].v);
 
   }
 }
 
 void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direction){
   // Map speed (motor speed) to a speed factor (higher speed = faster advances)
-  unsigned long speedFactor = map(speed, 1, 950, 2500/transitionSteps, 900/transitionSteps); // Speed factor (chaseSpeed) based on motor speed
+  unsigned long speedFactor = map(speed, 1, 950, 3000/transitionSteps, 875/transitionSteps); // Speed factor (chaseSpeed) based on motor speed
   // Activate LEDs
   strip.setBrightness(255);
+  // Initialize currentBrightness and targetOffsets if it's the first run
+  static bool firstRun = true;
+  if (firstRun) {
+    // Initialize currentBrightness and targetOffsets with baseBrightness
+    for (int i = 0; i < LED_COUNT; i++) {
+      float baseBrightness = lightBrightC / 255.0; // 0-255 scale to 0-1 scale
+      currentBrightness[i] = baseBrightness;
+      targetOffsets[i] = baseBrightness;
+    }
+    firstRun = false;  // Set flag to false after first run
+  }
   // Chase Speed
   unsigned long now = millis();
   if(now - lastUpdate > speedFactor){
-    
-    for (int i = 0; i < LED_COUNT; i++) {
+    // Normalize brightness to a range between 0 and 1
+    float baseBrightness = lightBrightC / 255.0; // 0-255 scale to 0-1 scale
+    uint8_t sparkleDepth = map(speed, 0, 950, 20, 5);
+    unsigned long sparkleTimer = map(speed, 1, 950, 10, 100);
 
+    for (int i = 0; i < LED_COUNT; i++) {
+      //HUE
       int index1 = (leadLed + LED_COUNT + i ) % LED_COUNT;
       int index2 = (leadLed + LED_COUNT + i + 1) % LED_COUNT;
       if (direction < 0) {
@@ -269,26 +286,40 @@ void LightControl::fadeChaser(uint16_t speed, uint8_t lightBrightC, int8_t direc
       float s = lerp(c1.s, c2.s, transitionProgress);
       float v = lerp(c1.v, c2.v, transitionProgress);
       
-      // // CORRECT floating-point math for brightness
-      // float brightnessFactor = (float)lightBrightC / 255.0f;
-      // //uint8_t finalVal = constrain((int)(finalBrightness + 0.5f), 0, 255);
-      
-      // Dynamic color calculation based on HSV
-      uint32_t finalColor = strip.ColorHSV(degreesToHue16(h), s, lightBrightC);
-      // uint32_t finalColor = strip.ColorHSV(degreesToHue16(ringColors[i].h), ringColors[i].s, lightBrightC);
-
-      if(i == 0){
-        DEBUG_PRINTF("Index %d, to %d\n", index1, index2);
-        DEBUG_PRINTF("Indexed Hue: %i to %i\n", c1.h, c2.h);
-        DEBUG_PRINTF("Transition Progress: %.2f, Hue: %.2f, Sat: %.2f, Val: %.2f \n", transitionProgress, h, s, v);
+      // Brightness
+      if(now - lastSparkleUpdate > sparkleTimer){
+        // Check if current brightness has reached the target, if so, generate a new target offset
+        if (abs(currentBrightness[i] - targetOffsets[i]) < 0.01) {  // small threshold to avoid floating-point issues
+          // Randomly decide the sparkle effect intensity
+          float offsetPercent = 0.0f;
+          if (random(0, 100) < 15) { 
+            offsetPercent = random(sparkleDepth, (sparkleDepth *1.5)) / 100.0; // Deep sparkle: 25%-75% of baseBrightness
+            // Randomly flip the offset direction (positive or negative)
+            if (random(0, 2) == 0) {
+              offsetPercent = -offsetPercent; // Make it negative with 50% chance
+            }
+          } else {
+            // Standard random offset (±20% around baseBrightness)
+            offsetPercent = random(-sparkleDepth, sparkleDepth) / 100.0; // Random offset between -20% and 20%
+          }
+          // Constrain targetOffsets to 0-1 range (so brightness won't go negative)
+          targetOffsets[i] = constrain(baseBrightness + offsetPercent, 0.0, 1.0); // Apply to base brightness
+        }
+        // Smoothly transition to the new target brightness
+        currentBrightness[i] += (targetOffsets[i] - currentBrightness[i]) * 0.1; // Smooth fading
+        currentBrightness[i] = constrain(currentBrightness[i], 0.0f, 1.0f); // Constrain to 0-1 range
         
-        //finalColor = strip.ColorHSV(degreesToHue16(h), s, lightBrightC);
       }
+      float sparkleV = v * currentBrightness[i]; // modulate interpolated value
+      // Dynamic color calculation based on HSV
+      uint32_t finalColor = strip.ColorHSV(degreesToHue16(h), s, sparkleV);
       strip.setPixelColor(i, finalColor);  // Set the pixel color
-
     }
     strip.show();
     lastUpdate = now;
+    if(now - lastSparkleUpdate > sparkleTimer){
+      lastSparkleUpdate = now;
+    }
     // Progress the transition
     transitionProgress += transitionStep;
     if (transitionProgress >= 1.0f) {

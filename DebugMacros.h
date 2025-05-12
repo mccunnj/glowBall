@@ -1,7 +1,7 @@
 #ifndef DEBUG_MACROS_H
 #define DEBUG_MACROS_H
 
-#define DEBUG_MODE true
+#define DEBUG_MODE false
 #if DEBUG_MODE
   #define DEBUG_PRINT(x)    Serial.print(x)
   #define DEBUG_PRINTLN(x)  Serial.println(x)

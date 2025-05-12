@@ -46,12 +46,13 @@ private:
   
   //Animation timer
   unsigned long lastUpdate;
+  unsigned long lastSparkleUpdate;
   //uint updateTime;
   void ledAdvance(int8_t direction);
   
   //SolidSparkle
-  float targetOffsets[50];  // Brightness offsets for each LED
-  float currentBrightness[50];  // Current brightness values for each LED
+  float targetOffsets[LED_COUNT];  // Brightness offsets for each LED
+  float currentBrightness[LED_COUNT];  // Current brightness values for each LED
 
   //FadeChaser
   uint8_t frontPixelIndex = 0;
